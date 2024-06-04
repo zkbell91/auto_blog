@@ -2,25 +2,30 @@ import openai
 from dotenv import load_dotenv
 import os
 
-# Load environment variables
 load_dotenv()
 
 def generate_blog_content(title, previous_blogs):
-    openai.api_key = os.getenv("OPENAI_API_KEY")
+    openai.api_key = os.getenv('OPENAI_API_KEY')
     context = "\n".join([blog['content'] for blog in previous_blogs])
-    prompt = f"Write a detailed blog post about '{title}'.\n\n{context}"
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": f"Write a detailed blog post about '{title}'. Here is some context from previous blog posts: {context}"}
+    ]
     
-    response = openai.Completion.create(
-      engine="gpt-4o",
-      prompt=prompt,
-      max_tokens=1500,
-      temperature=0.7
+    response = openai.ChatCompletion.create(
+        model="gpt-4o",
+        messages=messages,
+        max_tokens=1500
     )
     
-    return response.choices[0].text
+    return response['choices'][0]['message']['content']
 
-# Example usage (this would be called from main.py)
-# previous_blogs = load_previous_blogs('path_to_previous_blogs')
-# title = "How to manage OCD for Better Mental Health"
-# content = generate_blog_content(title, previous_blogs)
-# print(content)
+# Test the function
+if __name__ == "__main__":
+    previous_blogs = [
+        {"content": "Content of previous blog 1."},
+        {"content": "Content of previous blog 2."}
+    ]
+    title = "How to manage OCD for Better Mental Health"
+    content = generate_blog_content(title, previous_blogs)
+    print("Generated Content:", content)
