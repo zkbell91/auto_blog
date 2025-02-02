@@ -1,150 +1,170 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
-import time
 import os
+import requests
+import mimetypes
+import base64
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
-def close_overlay(driver):
+def create_trix_attachment(image_path):
+    """Create a Trix attachment for an image."""
     try:
-        print("Closing overlays if any...")
-        overlay = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, ".cc-nb-main-container"))
-        )
-        driver.execute_script("arguments[0].style.display = 'none';", overlay)
-    except TimeoutException:
-        print("No overlay found or it cannot be closed.")
-
-def post_blog(title, user, description, keywords, content, image_filenames):
-    # Initialize the browser
-    driver = webdriver.Chrome()
-    driver.get(os.getenv('BLOG_URL'))
-
-    try:
-        # Wait for the login page to load completely
-        print("Waiting for login page to load...")
-        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "user_email")))
+        # Determine the mime type
+        mime_type, _ = mimetypes.guess_type(image_path)
+        if not mime_type:
+            mime_type = 'image/png'
         
-        # Locate the email field and enter the email
-        print("Entering email...")
-        email_field = driver.find_element(By.ID, "user_email")
-        email_field.send_keys(os.getenv('BLOG_EMAIL'))
+        # Read and encode the image
+        with open(image_path, 'rb') as image_file:
+            encoded = base64.b64encode(image_file.read()).decode('utf-8')
+            
+        # Create the Trix attachment format
+        filename = os.path.basename(image_path)
+        attachment = {
+            "contentType": mime_type,
+            "filename": filename,
+            "filesize": os.path.getsize(image_path),
+            "url": f"data:{mime_type};base64,{encoded}",
+            "sgid": f"Attachment_{filename}"  # This might need to be adjusted based on your Rails setup
+        }
         
-        # Locate the password field and enter the password
-        print("Entering password...")
-        password_field = driver.find_element(By.NAME, "user[password]")
-        password_field.send_keys(os.getenv('BLOG_PASSWORD'))
-        
-        # Submit the login form
-        print("Submitting login form...")
-        password_field.send_keys(Keys.RETURN)
-        
-        # Wait for the "Signed in successfully" message to appear
-        print("Waiting for successful login message...")
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.XPATH, "//p[contains(@class, 'text-green-700') and contains(text(), 'Signed in successfully.')]"))
-        )
-        
-        # Navigate to the new post page
-        print("Navigating to new blog post page...")
-        driver.get(os.getenv('NEW_POST_URL'))
-        
-        # Wait for the new post page to load completely
-        print("Waiting for new blog post page to load...")
-        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "blog_title")))
-        
-        # Enter the title
-        print("Entering the title...")
-        title_field = driver.find_element(By.ID, "blog_title")
-        title_field.send_keys(title)
-        
-        # Enter the user
-        print("Entering the user...")
-        user_field = driver.find_element(By.ID, "blog_user_id")
-        user_field.send_keys(user)
-        
-        # Enter the description
-        print("Entering the description...")
-        description_field = driver.find_element(By.ID, "blog_description")
-        description_field.send_keys(description)
-        
-        # Enter the keywords
-        print("Entering the keywords...")
-        keywords_field = driver.find_element(By.ID, "blog_keywords")
-        keywords_field.send_keys(keywords)
-        
-        # Enter the content
-        print("Entering the content...")
-        content_field = driver.find_element(By.ID, "blog_content")
-        content_field.send_keys(content)
-        
-        # Upload images (if applicable)
-        for image_filename in image_filenames:
-            # Verify the image file exists
-            if not os.path.exists(image_filename):
-                print(f"Error: File not found - {image_filename}")
-                continue
-
-            close_overlay(driver)
-
-            # Scroll the "Attach Files" button into view and click it using JavaScript
-            print("Clicking the 'Attach Files' button...")
-            attach_button = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[@data-trix-action='attachFiles']"))
-            )
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", attach_button)
-            driver.execute_script("arguments[0].click();", attach_button)
-            time.sleep(1)  # Allow time for the file dialog to open
-
-            # Simulate the file selection in the dialog
-            print(f"Uploading image: {image_filename}")
-            file_input = driver.execute_script("return document.querySelector('input[type=file]');")
-            if file_input:
-                file_input.send_keys(os.path.abspath(image_filename))
-            else:
-                print("File input element not found.")
-            time.sleep(1)  # Wait a bit for the upload to process
-
-        close_overlay(driver)
-
-        # Click the submit button to publish the blog
-        print("Clicking the submit button...")
-        submit_button = driver.find_element(By.NAME, "commit")
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
-        driver.execute_script("arguments[0].click();", submit_button)
-        
-        # Wait to ensure the post is published
-        print("Waiting for the post to be published...")
-        WebDriverWait(driver, 20).until(EC.url_contains("/blogs"))
-        
-        print("Blog post successfully created and posted!")
-        
-    except ElementClickInterceptedException as e:
-        print(f"ElementClickInterceptedException occurred: {str(e)}")
-    except TimeoutException as e:
-        print(f"TimeoutException occurred: {str(e)}")
-    except NoSuchElementException as e:
-        print(f"NoSuchElementException occurred: {str(e)}")
+        # Create the Trix attachment HTML with center alignment
+        figure = f'<div style="text-align: center; margin: 20px 0;"><figure data-trix-attachment=\'{json.dumps(attachment)}\'></figure></div>'
+        return figure
+            
     except Exception as e:
-        print(f"An error occurred while posting the blog: {e.__class__.__name__}: {str(e)}")
+        print(f"Error creating Trix attachment: {str(e)}")
+        return None
+
+def format_content_with_images(content, image_paths):
+    """Format content with proper spacing and distributed images."""
+    # Split content into paragraphs
+    paragraphs = content.split('\n\n')
+    
+    # Initialize formatted content
+    formatted_content = []
+    image_index = 0
+    
+    for i, paragraph in enumerate(paragraphs):
+        # Skip empty paragraphs
+        if not paragraph.strip():
+            continue
+            
+        # Handle numbered sections and headings with proper formatting
+        if paragraph.strip()[0].isdigit() and '. ' in paragraph:
+            # Numbered sections
+            title_part = paragraph.split('\n')[0]
+            rest_part = '\n'.join(paragraph.split('\n')[1:])
+            # Use heading1 attribute for first section, heading2 for others
+            heading_attr = 'heading1' if i == 0 else 'heading2'
+            formatted_paragraph = f'<div data-trix-content-type="block" data-trix-attributes="{{\\"heading\\": true}}">{title_part.strip()}</div>'
+            if rest_part.strip():
+                formatted_paragraph += f'\n<div data-trix-content-type="block"><div class="paragraph">{rest_part.strip()}</div></div>'
+        elif ':' in paragraph and len(paragraph.split(':')[0]) < 50:
+            # Treat lines with colons as headings with bold attribute
+            title_part = paragraph.split(':')[0]
+            rest_part = ':'.join(paragraph.split(':')[1:])
+            formatted_paragraph = f'<div data-trix-content-type="block" data-trix-attributes="{{\\"bold\\": true}}">{title_part.strip()}:</div>'
+            if rest_part.strip():
+                formatted_paragraph += f'\n<div data-trix-content-type="block"><div class="paragraph">{rest_part.strip()}</div></div>'
+        else:
+            # Regular paragraphs with block formatting
+            formatted_paragraph = f'<div data-trix-content-type="block"><div class="paragraph">{paragraph.strip()}</div></div>'
         
-    finally:
-        driver.quit()
+        formatted_content.append(formatted_paragraph)
+        formatted_content.append('<br data-trix-content-type="block">')  # Add block break between paragraphs
+
+        # Add image after introduction, after a major section, or at calculated intervals
+        if image_index < len(image_paths) and (
+            i == 2 or  # After introduction
+            (i > 2 and i % 3 == 0) or  # Every few paragraphs
+            paragraph.strip().startswith(str(i)) or  # After numbered sections
+            paragraph.strip().startswith('#')  # After headers
+        ):
+            # Use the create_trix_attachment function to properly format the image
+            image_attachment = create_trix_attachment(image_paths[image_index])
+            if image_attachment:
+                formatted_content.append(image_attachment)
+                formatted_content.append('<br data-trix-content-type="block">')  # Add block break after image
+            image_index += 1
+    
+    # Add any remaining images near the end
+    while image_index < len(image_paths):
+        image_attachment = create_trix_attachment(image_paths[image_index])
+        if image_attachment:
+            formatted_content.append(image_attachment)
+            formatted_content.append('<br data-trix-content-type="block">')  # Add block break after image
+        image_index += 1
+    
+    return '\n'.join(formatted_content)
+
+def post_blog(title, content, image_paths):
+    """Post a blog using the API endpoint."""
+    try:
+        # Clean up the title (remove numbering and extra quotes)
+        if title.startswith(('1. ', '2. ', '3. ')):
+            title = title[3:]
+        title = title.strip('"')
+        
+        # Format content with distributed images
+        formatted_content = format_content_with_images(content, image_paths)
+        
+        # Wrap in Trix content div
+        formatted_content = f'<div class="trix-content">\n{formatted_content}\n</div>'
+        
+        # Prepare the blog post data
+        blog_data = {
+            'blog': {
+                'title': title,
+                'content': formatted_content
+            }
+        }
+        
+        # Send the request to create the blog post
+        api_endpoint = os.getenv('API_ENDPOINT')
+        api_key = os.getenv('API_KEY')
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}'
+        }
+        
+        response = requests.post(api_endpoint, json=blog_data, headers=headers)
+        print("Sending request to API...")
+        print(f"Endpoint: {api_endpoint}")
+        print(f"Title: {title}")
+        print(f"Response status code: {response.status_code}")
+        print(f"Response body: {response.text}")
+        
+        if response.status_code == 201:
+            blog_data = response.json()
+            blog = blog_data.get('blog', {})
+            
+            print("\nBlog post successfully created!")
+            print(f"Blog ID: {blog.get('id')}")
+            print(f"Title: {blog.get('title')}")
+            print(f"Slug: {blog.get('slug')}")
+            print(f"Author: {blog.get('author')}")
+            print(f"Created at: {blog.get('created_at')}")
+            
+            blog_base_url = os.getenv('BLOG_BASE_URL', 'http://localhost:3000')
+            blog_url = f"{blog_base_url}/blogs/{blog.get('slug')}"
+            print(f"URL: {blog_url}")
+            
+            print("Blog post successfully created and posted!")
+            return True
+        else:
+            print(f"Failed to create blog post. Status code: {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"Error creating blog post: {str(e)}")
+        return False
 
 # Test case for post_blog function
 if __name__ == "__main__":
-    test_title = "Test Blog Post Title"
-    test_user = "Zachary Bell (Admin)"
-    test_description = "This is a test description."
-    test_keywords = "test, blog, selenium"
-    test_content = "This is a test blog post content."
-    test_image_filenames = [
-        "/Users/zack/Desktop/coding-environment/src/web-check/auto_blog/blog_images/how_to_manage_ocd_for_better_mental_health_1.png", 
-        "/Users/zack/Desktop/coding-environment/src/web-check/auto_blog/blog_images/how_to_manage_ocd_for_better_mental_health_2.png"
-    ]  # Replace with actual paths to test images
-    post_blog(test_title, test_user, test_description, test_keywords, test_content, test_image_filenames)
+    test_title = "Test Blog Post"
+    test_content = "This is a test blog post content created via the API."
+    post_blog(test_title, test_content)
